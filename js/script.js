@@ -36,7 +36,14 @@ const BING_AUTOSEARCH = {
             return { name, value };
         },
         load: () => {
-            let modal_help = new bootstrap.Modal(document.getElementById('modal-help'), {});
+            let show_help = () => { };
+
+            try {
+                let modal_help = new bootstrap.Modal(document.getElementById('modal-help'), {});
+
+                show_help = () => modal_help.show();
+            }
+            catch (e) { }
 
             let _need_help = BING_AUTOSEARCH.storage.get("_need_help");
             let _multitab_mode = BING_AUTOSEARCH.storage.get("_multitab_mode");
@@ -44,13 +51,13 @@ const BING_AUTOSEARCH = {
             let _search_limit = BING_AUTOSEARCH.storage.get("_search_limit");
 
             if (!_need_help.value) {
-                modal_help.show();
+                show_help();
 
-                BING_AUTOSEARCH.storage.set("_need_help", BING_AUTOSEARCH.search.multitab.toString());
+                BING_AUTOSEARCH.storage.set("_need_help", "true");
             }
 
             if (!_search_interval.value) {
-                modal_help.show();
+                show_help();
 
                 BING_AUTOSEARCH.storage.set("_search_interval", BING_AUTOSEARCH.search.interval.toString());
             }
@@ -59,7 +66,7 @@ const BING_AUTOSEARCH = {
             }
 
             if (!_search_limit.value) {
-                modal_help.show();
+                show_help();
 
                 BING_AUTOSEARCH.storage.set("_search_limit", BING_AUTOSEARCH.search.limit.toString());
             }
@@ -85,6 +92,8 @@ const BING_AUTOSEARCH = {
         limit: 35,
         interval: 10000,
         multitab: false,
+        running: false,
+        timers: [],
         isRandomInterval: () => BING_AUTOSEARCH.search.interval === 9998 || BING_AUTOSEARCH.search.interval === 9999,
         randomInterval: () => (Math.floor(Math.random() * (BING_AUTOSEARCH.search.interval === 9998 ? 11 : 51)) + 10) * 1000,
         pageLifetime: () => (BING_AUTOSEARCH.search.isRandomInterval() || BING_AUTOSEARCH.search.interval > 10000 ? 10000 : BING_AUTOSEARCH.search.interval),
@@ -129,16 +138,28 @@ const BING_AUTOSEARCH = {
                 }
             },
             window: {
+                blocked: false,
+                isAllowed: () => {
+                    // No Permissions API for pop-ups: the 2nd window.open in one click is blocked unless the site is allowed.
+                    let probe = null;
+                    let check = null;
+
+                    try {
+                        probe = window.open("about:blank", "_blank", "width=1,height=1");
+                        check = window.open("about:blank", "_blank", "width=1,height=1");
+                    }
+                    catch (e) { }
+
+                    [probe, check].forEach((w) => { try { w && w.close(); } catch (e) { } });
+
+                    return !!(probe && check);
+                },
                 open: (search) => {
                     try {
                         let w = window.open(search.url);
 
                         if (!w) {
-                            if (!BING_AUTOSEARCH.search.engine.window.blocked) {
-                                BING_AUTOSEARCH.search.engine.window.blocked = true;
-
-                                alert("Pop-up blocked: allow pop-ups for this site to use Multi-tab Mode, or switch Multi-tab Mode off.");
-                            }
+                            BING_AUTOSEARCH.search.stop("Pop-ups are blocked, so the remaining searches were cancelled. Allow pop-ups for this page (pop-up icon in the address bar), then press Start again. Or switch Multi-tab Mode off.");
 
                             return;
                         }
@@ -170,7 +191,7 @@ const BING_AUTOSEARCH = {
                         return `${BING_AUTOSEARCH.elements.select.limit.options[BING_AUTOSEARCH.elements.select.limit.selectedIndex].text}, ${BING_AUTOSEARCH.elements.select.interval.options[BING_AUTOSEARCH.elements.select.interval.selectedIndex].text} interval and Multi-tab Mode ${BING_AUTOSEARCH.elements.select.multitab.options[BING_AUTOSEARCH.elements.select.multitab.selectedIndex].text}`;
                     }
                     catch (e) {
-                        return `Oops! There was an error loading the settings, please clear your browser cookies and reload the page to continue`;
+                        return `Oops! There was an error loading the settings, please clear your browser storage and reload the page to continue`;
                     }
                 }
             },
@@ -204,6 +225,9 @@ const BING_AUTOSEARCH = {
                     BING_AUTOSEARCH.search.engine.timer.complete = complete;
                 },
                 run: () => {
+                    if (!BING_AUTOSEARCH.search.running)
+                        return;
+
                     let now = new Date();
                     let next = (BING_AUTOSEARCH.search.engine.timer.next - now);
                     let complete = (BING_AUTOSEARCH.search.engine.timer.complete - now);
@@ -250,17 +274,20 @@ const BING_AUTOSEARCH = {
             return searches;
         },
         start: () => {
+            BING_AUTOSEARCH.search.running = true;
+            BING_AUTOSEARCH.search.timers = [];
+
             let searches = BING_AUTOSEARCH.search.generate();
 
             searches.forEach((search) => {
-                setTimeout(() => {
+                BING_AUTOSEARCH.search.timers.push(setTimeout(() => {
                     BING_AUTOSEARCH.search.engine.progress.update(search);
                     BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(search);
 
                     if (search.index === BING_AUTOSEARCH.search.limit) {
-                        setTimeout(() => {
+                        BING_AUTOSEARCH.search.timers.push(setTimeout(() => {
                             BING_AUTOSEARCH.search.stop();
-                        }, BING_AUTOSEARCH.search.pageLifetime());
+                        }, BING_AUTOSEARCH.search.pageLifetime()));
                     }
 
                     if (search.delay === 0)
@@ -270,13 +297,30 @@ const BING_AUTOSEARCH = {
                         BING_AUTOSEARCH.search.engine.iframe.add(search);
                     else
                         BING_AUTOSEARCH.search.engine.window.open(search);
-                }, search.delay);
+                }, search.delay));
             });
         },
-        stop: () => {
-            window.open("https://rewards.bing.com/pointsbreakdown");
+        stop: (message) => {
+            if (!BING_AUTOSEARCH.search.running)
+                return;
 
-            location.reload();
+            BING_AUTOSEARCH.search.running = false;
+            BING_AUTOSEARCH.search.timers.forEach((timer) => clearTimeout(timer));
+            BING_AUTOSEARCH.search.timers = [];
+
+            document.title = "Bing Auto Search for Microsoft Rewards";
+
+            Object.values(BING_AUTOSEARCH.elements.select).forEach((select) => select.disabled = false);
+
+            BING_AUTOSEARCH.elements.button.stop.style.display = "none";
+            BING_AUTOSEARCH.elements.button.start.style.display = "inline-block";
+
+            BING_AUTOSEARCH.elements.div.timer.innerHTML = message
+                ? `<strong>Auto Search Stopped:</strong> ${message}`
+                : `<strong>Auto Search Finished:</strong> check your points on <a href="https://rewards.bing.com/pointsbreakdown" target="_blank">Microsoft Rewards</a>.`;
+
+            if (message)
+                alert(message);
         }
     },
     applySettings: () => {
@@ -294,6 +338,12 @@ const BING_AUTOSEARCH = {
         BING_AUTOSEARCH.storage.load();
 
         BING_AUTOSEARCH.elements.button.start.addEventListener("click", () => {
+            if (BING_AUTOSEARCH.search.multitab && !BING_AUTOSEARCH.search.engine.window.isAllowed()) {
+                alert("Multi-tab Mode needs pop-up permission. Allow pop-ups for this page (click the pop-up icon in the address bar), then press Start again. Or switch Multi-tab Mode off to run in the background.");
+
+                return;
+            }
+
             BING_AUTOSEARCH.elements.button.start.style.display = "none";
             BING_AUTOSEARCH.elements.button.stop.style.display = "inline-block";
 
