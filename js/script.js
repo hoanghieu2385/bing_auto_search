@@ -59,7 +59,27 @@ const BING_AUTOSEARCH = {
                 BING_AUTOSEARCH.storage.set("_search_interval", BING_AUTOSEARCH.search.interval.toString());
             }
             else {
-                BING_AUTOSEARCH.elements.select.interval.value = BING_AUTOSEARCH.search.interval = parseInt(_search_interval.value.toString());
+                BING_AUTOSEARCH.search.interval = parseInt(_search_interval.value.toString());
+
+                // stored value may be a removed option (e.g. the old 5s) – fall back to the default
+                if (!BING_AUTOSEARCH.elements.select.interval.querySelector(`option[value='${BING_AUTOSEARCH.search.interval}']`)) {
+                    BING_AUTOSEARCH.search.interval = 9998;
+
+                    BING_AUTOSEARCH.storage.set("_search_interval", "9998");
+                }
+
+                // migrate the old 10s fixed default to the new 10~20s random default, once only
+                if (!BING_AUTOSEARCH.storage.get("_interval_migrated").value) {
+                    if (isNaN(BING_AUTOSEARCH.search.interval) || BING_AUTOSEARCH.search.interval === 10000) {
+                        BING_AUTOSEARCH.search.interval = 9998;
+
+                        BING_AUTOSEARCH.storage.set("_search_interval", "9998");
+                    }
+
+                    BING_AUTOSEARCH.storage.set("_interval_migrated", "true");
+                }
+
+                BING_AUTOSEARCH.elements.select.interval.value = BING_AUTOSEARCH.search.interval.toString();
             }
 
             if (!_search_limit.value) {
@@ -75,12 +95,28 @@ const BING_AUTOSEARCH = {
     },
     search: {
         limit: 35,
-        interval: 10000,
+        interval: 9998,
         running: false,
-        timers: [],
+        state: null,
         isRandomInterval: () => BING_AUTOSEARCH.search.interval === 9998 || BING_AUTOSEARCH.search.interval === 9999,
         randomInterval: () => (Math.floor(Math.random() * (BING_AUTOSEARCH.search.interval === 9998 ? 11 : 51)) + 10) * 1000,
-        pageLifetime: () => (BING_AUTOSEARCH.search.isRandomInterval() || BING_AUTOSEARCH.search.interval > 10000 ? 10000 : BING_AUTOSEARCH.search.interval),
+        avgInterval: () => (BING_AUTOSEARCH.search.isRandomInterval() ? (BING_AUTOSEARCH.search.interval === 9998 ? 15000 : 35000) : BING_AUTOSEARCH.search.interval),
+        pageLifetime: () => Math.max(BING_AUTOSEARCH.search.isRandomInterval() || BING_AUTOSEARCH.search.interval > 10000 ? 10000 : BING_AUTOSEARCH.search.interval, 15000),
+        // gap before the next (nextIndex-th) search: jittered interval, plus a long human-like break now and then
+        stepDelay: (nextIndex) => {
+            let delay = BING_AUTOSEARCH.search.isRandomInterval() ? BING_AUTOSEARCH.search.randomInterval() : Math.floor(BING_AUTOSEARCH.search.interval * (0.8 + Math.random() * 0.4));
+
+            if (BING_AUTOSEARCH.search.state && nextIndex === BING_AUTOSEARCH.search.state.nextLongBreak) {
+                delay += Math.floor((60 + Math.random() * 60) * 1000);
+                BING_AUTOSEARCH.search.state.nextLongBreak = nextIndex + 8 + Math.floor(Math.random() * 3);
+            }
+
+            return delay;
+        },
+        remainingMs: () => {
+            let left = BING_AUTOSEARCH.search.limit - BING_AUTOSEARCH.search.state.index;
+            return BING_AUTOSEARCH.search.avgInterval() * left + Math.max(0, Math.floor(left / 9)) * 90000;
+        },
         wakeLock: {
             sentinel: null,
             active: false,
@@ -133,21 +169,6 @@ const BING_AUTOSEARCH = {
             window: {
                 blocked: false,
                 host: null,
-                isAllowed: () => {
-                    // No Permissions API for pop-ups: the 2nd window.open in one click is blocked unless the site is allowed.
-                    let probe = null;
-                    let check = null;
-
-                    try {
-                        probe = window.open("about:blank", "_blank", "width=1,height=1");
-                        check = window.open("about:blank", "_blank", "width=1,height=1");
-                    }
-                    catch (e) { }
-
-                    [probe, check].forEach((w) => { try { w && w.close(); } catch (e) { } });
-
-                    return !!(probe && check);
-                },
                 getHost: (url) => {
                     // Reuse one tiny background window for every search so no new tab steals focus;
                     // a fresh window.open only happens if the user closed the host mid-run.
@@ -208,13 +229,10 @@ const BING_AUTOSEARCH = {
 
                     return `${showHours ? String(hrs).padStart(2, '0') + ":" : ""}${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
                 },
-                updateEstimatedTime: (search) => {
+                updateEstimatedTime: (delay) => {
                     let now = new Date();
-                    let next = new Date(now.getTime() + BING_AUTOSEARCH.search.interval);
-                    let complete = new Date(now.getTime() + (BING_AUTOSEARCH.search.interval * (BING_AUTOSEARCH.search.limit - search.index)));
-
-                    if (search.index === BING_AUTOSEARCH.search.limit)
-                        next = now;
+                    let next = new Date(now.getTime() + (delay === null ? 0 : delay));
+                    let complete = new Date(now.getTime() + (delay === null ? BING_AUTOSEARCH.search.pageLifetime() : delay + BING_AUTOSEARCH.search.remainingMs()));
 
                     BING_AUTOSEARCH.search.engine.timer.next = next;
                     BING_AUTOSEARCH.search.engine.timer.complete = complete;
@@ -245,62 +263,58 @@ const BING_AUTOSEARCH = {
                 }
             }
         },
-        generate: () => {
-            let searches = new Array();
-            let randomDelay = 0;
+        runNext: () => {
+            if (!BING_AUTOSEARCH.search.running)
+                return;
 
-            do
-            {
-                let term = BING_AUTOSEARCH.search.engine.terms.random();
+            let state = BING_AUTOSEARCH.search.state;
+            let index = ++state.index;
+            let term = BING_AUTOSEARCH.search.engine.terms.random();
+            let search = { term, url: `https://www.bing.com/search?q=${encodeURIComponent(term.toLowerCase())}&FORM=${BING_AUTOSEARCH.search.engine.form.random()}`, index };
 
-                if (!searches.includes(term)) {
-                    let index = searches.length + 1;
-                    let url = `https://www.bing.com/search?q=${encodeURIComponent(term.toLowerCase())}&FORM=${BING_AUTOSEARCH.search.engine.form.random()}`;                
-                    let delay = BING_AUTOSEARCH.search.interval * searches.length;
+            // chain the next timer BEFORE the search opens so a slow/blocked page can never pile up delayed searches
+            let delay = index < BING_AUTOSEARCH.search.limit ? BING_AUTOSEARCH.search.stepDelay(index + 1) : null;
 
-                    if (BING_AUTOSEARCH.search.isRandomInterval() && searches.length > 0)
-                        delay = randomDelay += BING_AUTOSEARCH.search.randomInterval();
+            if (delay !== null) {
+                state.timer = setTimeout(BING_AUTOSEARCH.search.runNext, delay);
+            }
+            else {
+                state.timer = setTimeout(BING_AUTOSEARCH.search.stop, BING_AUTOSEARCH.search.pageLifetime());
+            }
 
-                    searches.push({ term, url, index, delay });
-                }
+            BING_AUTOSEARCH.search.engine.progress.update(search);
+            BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(delay);
 
-            } while (searches.length < BING_AUTOSEARCH.search.limit)
-
-            return searches;
+            BING_AUTOSEARCH.search.engine.window.open(search);
         },
         start: () => {
             BING_AUTOSEARCH.search.running = true;
-            BING_AUTOSEARCH.search.timers = [];
 
             BING_AUTOSEARCH.search.wakeLock.activate();
 
-            let searches = BING_AUTOSEARCH.search.generate();
+            BING_AUTOSEARCH.search.state = {
+                index: 0,
+                timer: null,
+                nextLongBreak: 8 + Math.floor(Math.random() * 3)
+            };
 
-            searches.forEach((search) => {
-                BING_AUTOSEARCH.search.timers.push(setTimeout(() => {
-                    BING_AUTOSEARCH.search.engine.progress.update(search);
-                    BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(search);
+            // human-like offset: start the first search 0~30s after Start
+            let delay = Math.floor(Math.random() * 30000);
 
-                    if (search.index === BING_AUTOSEARCH.search.limit) {
-                        BING_AUTOSEARCH.search.timers.push(setTimeout(() => {
-                            BING_AUTOSEARCH.search.stop();
-                        }, BING_AUTOSEARCH.search.pageLifetime()));
-                    }
-
-                    if (search.delay === 0)
-                        BING_AUTOSEARCH.search.engine.timer.run();
-
-                    BING_AUTOSEARCH.search.engine.window.open(search);
-                }, search.delay));
-            });
+            BING_AUTOSEARCH.search.state.timer = setTimeout(BING_AUTOSEARCH.search.runNext, delay);
+            BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(delay);
+            BING_AUTOSEARCH.search.engine.timer.run();
         },
         stop: (message) => {
             if (!BING_AUTOSEARCH.search.running)
                 return;
 
             BING_AUTOSEARCH.search.running = false;
-            BING_AUTOSEARCH.search.timers.forEach((timer) => clearTimeout(timer));
-            BING_AUTOSEARCH.search.timers = [];
+
+            if (BING_AUTOSEARCH.search.state) {
+                clearTimeout(BING_AUTOSEARCH.search.state.timer);
+                BING_AUTOSEARCH.search.state = null;
+            }
 
             // Release the screen wake lock and close the background host window
             BING_AUTOSEARCH.search.wakeLock.release();
@@ -336,14 +350,14 @@ const BING_AUTOSEARCH = {
         BING_AUTOSEARCH.storage.load();
 
         BING_AUTOSEARCH.elements.button.start.addEventListener("click", () => {
-            if (!BING_AUTOSEARCH.search.engine.window.isAllowed()) {
+            // open the small host window inside this user gesture; opening here doubles as the pop-up permission check
+            let host = BING_AUTOSEARCH.search.engine.window.getHost();
+
+            if (!host) {
                 alert("Auto Search needs pop-up permission. Allow pop-ups for this page (click the pop-up icon in the address bar), then press Start again.");
 
                 return;
             }
-
-            // Open the small host window inside this user gesture so no later tab steals focus
-            BING_AUTOSEARCH.search.engine.window.getHost();
 
             BING_AUTOSEARCH.elements.button.start.style.display = "none";
             BING_AUTOSEARCH.elements.button.stop.style.display = "inline-block";
@@ -355,6 +369,14 @@ const BING_AUTOSEARCH = {
 
         BING_AUTOSEARCH.elements.button.stop.addEventListener("click", () => {
             BING_AUTOSEARCH.search.stop();
+        });
+
+        // warn before closing/reloading while a run is in progress
+        window.addEventListener("beforeunload", (e) => {
+            if (BING_AUTOSEARCH.search.running) {
+                e.preventDefault();
+                e.returnValue = "";
+            }
         });
 
         Object.values(BING_AUTOSEARCH.elements.select).forEach((select) => {

@@ -7,8 +7,10 @@ Dựa trên [gerisonsabino/bing_autosearch](https://github.com/gerisonsabino/bin
 ## Tính năng
 
 - Tự động chạy 5–50 lần tìm kiếm với từ khóa ngẫu nhiên.
-- Khoảng nghỉ: 5s, 10s, 15s, 30s, 60s, 2–5 phút, hoặc ngẫu nhiên **10–20s** / 10–60s.
+- Khoảng nghỉ: 10s, 15s, 30s, 60s, 2–5 phút, hoặc ngẫu nhiên **10–20s** / 10–60s.
 - Chạy trong **một cửa sổ nhỏ duy nhất** ở góc màn hình (chế độ Multi-tab), cần **cho phép pop-up** cho trang; điểm được tính chắc chắn vì Bing chạy với phiên đăng nhập thật.
+- Lập lịch **nối tiếp lượt trước – lượt sau** với độ vênh ngẫu nhiên (±20%), nghỉ dài 60–120s mỗi 8–10 lượt và lệch giờ bấm Start 0–30s → chống dồn dập search khi tab bị ẩn/máy ngủ, khó bị đánh dấu bot hơn.
+- Mặc định khoảng nghỉ **10–20s random**; cài 10s cố định cũ của các phiên trước tự đổi sang mặc định mới (một lần duy nhất).
 - Cài đặt được lưu bằng `localStorage`, áp dụng ngay khi đổi (không cần tải lại trang).
 - Hiển thị tiến độ trên tiêu đề tab, có đếm ngược và thời gian dự kiến hoàn thành.
 - Tự kiểm tra quyền pop-up trước khi chạy và báo nếu chưa được cấp.
@@ -24,7 +26,8 @@ Nếu chưa có quyền pop-up, bấm vào biểu tượng chặn pop-up trên t
 
 ## Lưu ý
 
-- Đừng đóng tab trong lúc đang chạy; có thể chuyển sang tab khác nhưng trình duyệt có thể làm chậm timer sau vài phút.
+- Đừng đóng tab khi đang chạy: trình duyệt sẽ hỏi xác nhận trước khi tắt/refresh tab để chống bấm nhầm mất trắng.
+- Tab ẩn trong nền lâu, Chrome có thể giãn nhịp timer xuống ~1 lượt/phút; do lập lịch nối tiếp nên các lượt **không bao giờ dồn thành chùm** — chỉ chậm hơn thôi, không điểm nào bị mất vì dồn.
 - Khi chạy, trang bật **Wake Lock** giữ màn hình luôn sáng (máy tính và điện thoại); bấm Stop hoặc chạy xong là tự tắt, màn hình về chế độ tắt bình thường. Nếu bạn rời trang quá lâu Wake Lock có thể tạm mất, quay lại trang khi đang chạy là tự bật lại.
 - Trên điện thoại, ở lần chạy đầu tiên tab của cửa sổ tìm kiếm có thể chiếm màn hình một lần duy nhất khi bấm Start; chỉ cần chuyển về tab chính, các lượt tìm sau chạy dưới nền.
 - Dùng có trách nhiệm, tự chịu rủi ro nếu tài khoản bị Microsoft đánh dấu bất thường.
