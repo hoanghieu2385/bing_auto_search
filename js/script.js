@@ -141,6 +141,15 @@ const BING_AUTOSEARCH = {
                 BING_AUTOSEARCH.search.wakeLock.active = false;
             }
         },
+        // wake lock fallback for iOS: navigator.wakeLock is undefined there, NoSleep keeps the screen on with a silent looping video instead
+        noSleep: window.NoSleep ? new NoSleep() : null,
+        enableNoSleep: () => {
+            if (!navigator.wakeLock && BING_AUTOSEARCH.search.noSleep)
+                BING_AUTOSEARCH.search.noSleep.enable().catch(() => { });
+        },
+        disableNoSleep: () => {
+            try { BING_AUTOSEARCH.search.noSleep && BING_AUTOSEARCH.search.noSleep.disable(); } catch (e) { }
+        },
         engine: {
             terms: {
                 lists: [
@@ -291,6 +300,7 @@ const BING_AUTOSEARCH = {
             BING_AUTOSEARCH.search.running = true;
 
             BING_AUTOSEARCH.search.wakeLock.activate();
+            BING_AUTOSEARCH.search.enableNoSleep();
 
             BING_AUTOSEARCH.search.state = {
                 index: 0,
@@ -318,6 +328,7 @@ const BING_AUTOSEARCH = {
 
             // Release the screen wake lock and close the background host window
             BING_AUTOSEARCH.search.wakeLock.release();
+            BING_AUTOSEARCH.search.disableNoSleep();
 
             try { BING_AUTOSEARCH.search.engine.window.host && BING_AUTOSEARCH.search.engine.window.host.close(); } catch (e) { }
             BING_AUTOSEARCH.search.engine.window.host = null;
