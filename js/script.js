@@ -101,6 +101,10 @@ const BING_AUTOSEARCH = {
             sentinel: null,
             active: false,
             activate: () => {
+                // Only keep the screen awake while a search run is active
+                if (!navigator.wakeLock || !BING_AUTOSEARCH.search.running || BING_AUTOSEARCH.search.wakeLock.sentinel)
+                    return;
+
                 navigator.wakeLock.request("screen").then(sentinel => {
                     BING_AUTOSEARCH.search.wakeLock.sentinel = sentinel;
                     BING_AUTOSEARCH.search.wakeLock.active = true;
@@ -110,6 +114,11 @@ const BING_AUTOSEARCH = {
                         BING_AUTOSEARCH.search.wakeLock.active = false;
                     });
                 }).catch(() => { });
+            },
+            release: () => {
+                try { BING_AUTOSEARCH.search.wakeLock.sentinel && BING_AUTOSEARCH.search.wakeLock.sentinel.release(); } catch (e) { }
+                BING_AUTOSEARCH.search.wakeLock.sentinel = null;
+                BING_AUTOSEARCH.search.wakeLock.active = false;
             }
         },
         engine: {
@@ -139,6 +148,7 @@ const BING_AUTOSEARCH = {
             },
             window: {
                 blocked: false,
+                host: null,
                 isAllowed: () => {
                     // No Permissions API for pop-ups: the 2nd window.open in one click is blocked unless the site is allowed.
                     let probe = null;
@@ -154,19 +164,34 @@ const BING_AUTOSEARCH = {
 
                     return !!(probe && check);
                 },
+                getHost: (url) => {
+                    // Reuse one tiny background window for every search so no new tab steals focus;
+                    // a fresh window.open only happens if the user closed the host mid-run.
+                    let host = BING_AUTOSEARCH.search.engine.window.host;
+
+                    try { if (host && !host.closed) return host; } catch (e) { }
+
+                    try {
+                        host = window.open(url || "about:blank", "bing_autosearch_host", "width=140,height=100,left=" + Math.max(0, (screen.availWidth - 150)) + ",top=" + Math.max(0, (screen.availHeight - 160)));
+                        BING_AUTOSEARCH.search.engine.window.host = host;
+
+                        window.focus();
+                    }
+                    catch (e) { }
+
+                    return host;
+                },
                 open: (search) => {
                     try {
-                        let w = window.open(search.url);
+                        let host = BING_AUTOSEARCH.search.engine.window.getHost(search.url);
 
-                        if (!w) {
+                        if (!host) {
                             BING_AUTOSEARCH.search.stop("Pop-ups are blocked, so the remaining searches were cancelled. Allow pop-ups for this page (pop-up icon in the address bar), then press Start again. Or switch Multi-tab Mode off.");
 
                             return;
                         }
 
-                        setTimeout(() => {
-                            w.close();
-                        }, BING_AUTOSEARCH.search.pageLifetime() - 500);
+                        host.location.replace(search.url);
                     }
                     catch (e) { }
                 }
@@ -277,6 +302,8 @@ const BING_AUTOSEARCH = {
             BING_AUTOSEARCH.search.running = true;
             BING_AUTOSEARCH.search.timers = [];
 
+            BING_AUTOSEARCH.search.wakeLock.activate();
+
             let searches = BING_AUTOSEARCH.search.generate();
 
             searches.forEach((search) => {
@@ -308,6 +335,12 @@ const BING_AUTOSEARCH = {
             BING_AUTOSEARCH.search.timers.forEach((timer) => clearTimeout(timer));
             BING_AUTOSEARCH.search.timers = [];
 
+            // Release the screen wake lock and close the background host window
+            BING_AUTOSEARCH.search.wakeLock.release();
+
+            try { BING_AUTOSEARCH.search.engine.window.host && BING_AUTOSEARCH.search.engine.window.host.close(); } catch (e) { }
+            BING_AUTOSEARCH.search.engine.window.host = null;
+
             document.title = "Bing Auto Search for Microsoft Rewards";
 
             Object.values(BING_AUTOSEARCH.elements.select).forEach((select) => select.disabled = false);
@@ -338,10 +371,15 @@ const BING_AUTOSEARCH = {
         BING_AUTOSEARCH.storage.load();
 
         BING_AUTOSEARCH.elements.button.start.addEventListener("click", () => {
-            if (BING_AUTOSEARCH.search.multitab && !BING_AUTOSEARCH.search.engine.window.isAllowed()) {
-                alert("Multi-tab Mode needs pop-up permission. Allow pop-ups for this page (click the pop-up icon in the address bar), then press Start again. Or switch Multi-tab Mode off to run in the background.");
+            if (BING_AUTOSEARCH.search.multitab) {
+                if (!BING_AUTOSEARCH.search.engine.window.isAllowed()) {
+                    alert("Multi-tab Mode needs pop-up permission. Allow pop-ups for this page (click the pop-up icon in the address bar), then press Start again. Or switch Multi-tab Mode off to run in the background.");
 
-                return;
+                    return;
+                }
+
+                // Open the small host window inside this user gesture so no later tab steals focus
+                BING_AUTOSEARCH.search.engine.window.getHost();
             }
 
             BING_AUTOSEARCH.elements.button.start.style.display = "none";
@@ -363,12 +401,9 @@ const BING_AUTOSEARCH = {
         BING_AUTOSEARCH.elements.div.settings.innerHTML = `<strong>Auto Search Settings:</strong> ${BING_AUTOSEARCH.search.engine.settings.toString()}.`;
 
         if ("wakeLock" in navigator) {
-            BING_AUTOSEARCH.search.wakeLock.activate();
-
             document.addEventListener("visibilitychange", () => {
-                if (document.visibilityState === "visible")
-                    if (!BING_AUTOSEARCH.search.wakeLock.active)
-                        BING_AUTOSEARCH.search.wakeLock.activate();
+                if (document.visibilityState === "visible" && BING_AUTOSEARCH.search.running)
+                    BING_AUTOSEARCH.search.wakeLock.activate();
             });
         }
     }

@@ -10,7 +10,7 @@ Dựa trên [gerisonsabino/bing_autosearch](https://github.com/gerisonsabino/bin
 - Khoảng nghỉ: 5s, 10s, 15s, 30s, 60s, 2–5 phút, hoặc ngẫu nhiên **10–20s** / 10–60s.
 - Hai chế độ chạy:
   - **Iframe (mặc định)**: chạy ẩn trong trang, không cần quyền pop-up.
-  - **Multi-tab**: mỗi lần tìm mở một tab thật rồi tự đóng. Cần **cho phép pop-up** cho trang.
+  - **Multi-tab**: dùng lại **một cửa sổ nhỏ duy nhất** ở góc màn hình, mỗi lượt tìm chỉ điều hướng cửa sổ đó sang URL Bing mới rồi focus tự động trả về trang chính — không còn tab mới nhảy lên chen ngang. Cần **cho phép pop-up** cho trang.
 - Cài đặt được lưu bằng `localStorage`, áp dụng ngay khi đổi (không cần tải lại trang).
 - Hiển thị tiến độ trên tiêu đề tab, có đếm ngược và thời gian dự kiến hoàn thành.
 - Tự kiểm tra quyền pop-up trước khi chạy Multi-tab và báo nếu chưa được cấp.
@@ -28,6 +28,8 @@ Nếu chọn Multi-tab, bấm vào biểu tượng chặn pop-up trên thanh đ�
 
 - Chế độ iframe có thể **không được tính điểm** nếu trình duyệt chặn cookie bên thứ ba (Bing không thấy phiên đăng nhập). Muốn chắc ăn thì dùng Multi-tab.
 - Đừng đóng tab trong lúc đang chạy; có thể chuyển sang tab khác nhưng trình duyệt có thể làm chậm timer sau vài phút.
+- Khi chạy, trang bật **Wake Lock** giữ màn hình luôn sáng (máy tính và điện thoại); bấm Stop hoặc chạy xong là tự tắt, màn hình về chế độ tắt bình thường. Nếu bạn rời trang quá lâu Wake Lock có thể tạm mất, quay lại trang khi đang chạy là tự bật lại.
+- Trên điện thoại, ở lần chạy đầu tiên tab của cửa sổ tìm kiếm có thể chiếm màn hình một lần duy nhất khi bấm Start; chỉ cần chuyển về tab chính, các lượt tìm sau chạy dưới nền.
 - Dùng có trách nhiệm, tự chịu rủi ro nếu tài khoản bị Microsoft đánh dấu bất thường.
 
 ## Giấy phép
