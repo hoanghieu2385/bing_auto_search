@@ -88,7 +88,16 @@ const BING_AUTOSEARCH = {
                 BING_AUTOSEARCH.storage.set("_search_limit", BING_AUTOSEARCH.search.limit.toString());
             }
             else {
-                BING_AUTOSEARCH.elements.select.limit.value = BING_AUTOSEARCH.search.limit = parseInt(_search_limit.value.toString());
+                BING_AUTOSEARCH.search.limit = parseInt(_search_limit.value.toString());
+
+                // stored value may be gone (e.g. hand-edited storage) – fall back to the default
+                if (!BING_AUTOSEARCH.elements.select.limit.querySelector(`option[value='${BING_AUTOSEARCH.search.limit}']`)) {
+                    BING_AUTOSEARCH.search.limit = 35;
+
+                    BING_AUTOSEARCH.storage.set("_search_limit", "35");
+                }
+
+                BING_AUTOSEARCH.elements.select.limit.value = BING_AUTOSEARCH.search.limit.toString();
             }
 
         }
