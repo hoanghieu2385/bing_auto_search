@@ -109,7 +109,11 @@ const BING_AUTOSEARCH = {
         state: null,
         // on phones: close each search tab once it has loaded and open a fresh one, so the main tab
         // (progress + timers) comes back to the front instead of staying hidden behind the search tab
+        // decided by input type, not screen width: touch devices (phones, tablets) open pop-ups as full tabs,
+        // while a narrow desktop window still opens a real small window
         closeAfterSearch: !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches),
+        // time Bing's page gets to finish loading in the tab before it is closed
+        closeAfterAnswerMs: 3000,
         isRandomInterval: () => BING_AUTOSEARCH.search.interval === 9998 || BING_AUTOSEARCH.search.interval === 9999,
         randomInterval: () => (Math.floor(Math.random() * (BING_AUTOSEARCH.search.interval === 9998 ? 11 : 51)) + 10) * 1000,
         avgInterval: () => (BING_AUTOSEARCH.search.isRandomInterval() ? (BING_AUTOSEARCH.search.interval === 9998 ? 15000 : 35000) : BING_AUTOSEARCH.search.interval),
@@ -205,52 +209,61 @@ const BING_AUTOSEARCH = {
                 },
                 open: (search) => {
                     let engine = BING_AUTOSEARCH.search.engine.window;
-                    let state = BING_AUTOSEARCH.search.state;
-
-                    // a pending close from the previous search must not race this one
-                    if (state) clearTimeout(state.closeTimer);
-
                     let host = null;
-                    // the very first search reuses the tab opened by the Start click (that tab is already in front)
-                    let closeable = BING_AUTOSEARCH.search.closeAfterSearch && !!state && state.index === 1;
 
-                    if (BING_AUTOSEARCH.search.closeAfterSearch && !closeable) {
-                        // a fresh named window per search; the old one is only closed once the new one really
-                        // opened, so a blocked pop-up leaves the current tab usable for reuse
-                        let fresh = null;
+                    if (BING_AUTOSEARCH.search.closeAfterSearch) {
+                        // phones: each search gets its own tab that closes itself once Bing has answered,
+                        // so the main tab (progress + countdown) comes back to the front between searches.
+                        // A tab still open from the previous search (slow page) is closed first, never two at once
+                        try { if (engine.host && !engine.host.closed) engine.host.close(); } catch (e) { }
 
-                        try { fresh = window.open(search.url, "bing_autosearch_host_" + search.index, engine.features()); } catch (e) { }
+                        try { host = window.open(search.url, "bing_autosearch_" + search.index); } catch (e) { }
 
-                        if (fresh) {
-                            try { if (engine.host && !engine.host.closed && engine.host !== fresh) engine.host.close(); } catch (e) { }
-
-                            engine.host = host = fresh;
-                            closeable = true;
+                        if (host) {
+                            engine.host = host;
+                            engine.closeWhenLoaded(host);
                         }
                     }
-
-                    if (!host) {
+                    else {
+                        // desktop: keep reusing the one small corner window, so nothing steals focus
                         try {
                             host = engine.getHost(search.url);
 
                             if (host) host.location.replace(search.url);
                         }
                         catch (e) { }
+                    }
 
-                        if (!host) {
-                            BING_AUTOSEARCH.search.stop("Pop-ups are blocked, so the remaining searches were cancelled. Allow pop-ups for this page (pop-up icon in the address bar), then press Start again.");
+                    if (!host)
+                        BING_AUTOSEARCH.search.stop(`Search ${search.index}/${BING_AUTOSEARCH.search.limit} could not open because pop-ups are blocked, so the run stopped. Allow pop-ups for this page (pop-up icon in the address bar, or the browser's site settings), then press Start again.`);
+                },
+                closeWhenLoaded: (tab) => {
+                    let state = BING_AUTOSEARCH.search.state;
+                    let openedAt = Date.now();
+                    let answeredAt = null;
+
+                    let check = () => {
+                        if (tab.closed)
+                            return;
+
+                        // the new tab starts as a same-origin about:blank; reading it throws once Bing's page has
+                        // arrived, i.e. Bing already received the search
+                        if (answeredAt === null) {
+                            try { tab.location.href; } catch (e) { answeredAt = Date.now(); }
+                        }
+
+                        let now = Date.now();
+
+                        if ((answeredAt !== null && now - answeredAt >= BING_AUTOSEARCH.search.closeAfterAnswerMs) || now - openedAt >= BING_AUTOSEARCH.search.pageLifetime()) {
+                            try { tab.close(); } catch (e) { }
 
                             return;
                         }
-                    }
 
-                    if (closeable) {
-                        // close it only after its full lifetime (the search must still count), then the
-                        // main tab — with the progress and the timers — comes back to the front
-                        state.closeTimer = setTimeout(() => {
-                            try { host.close(); } catch (e) { }
-                        }, BING_AUTOSEARCH.search.pageLifetime());
-                    }
+                        state.closeTimer = setTimeout(check, 300);
+                    };
+
+                    check();
                 }
             },
             settings: {
@@ -297,21 +310,11 @@ const BING_AUTOSEARCH = {
                     let next = (BING_AUTOSEARCH.search.engine.timer.next - now);
                     let complete = (BING_AUTOSEARCH.search.engine.timer.complete - now);
 
-                    if (BING_AUTOSEARCH.search.isRandomInterval()) {
-                        let range = BING_AUTOSEARCH.search.interval === 9998 ? "10~20" : "10~60";
+                    // the next delay is already drawn when it is scheduled, so random intervals get a real countdown too
+                    // keep ticking until stop(): the completion time is only an estimate and may be overrun
+                    BING_AUTOSEARCH.elements.div.timer.innerHTML = `<strong>Auto Search Running:</strong> ${next >= 0 ? `New auto search in ${BING_AUTOSEARCH.search.engine.timer.toClockFormat(next)}` : "Finishing last auto search"}, estimated time to complete ${BING_AUTOSEARCH.search.engine.timer.toClockFormat(Math.max(0, complete), true)}.`;
 
-                        BING_AUTOSEARCH.elements.div.timer.innerHTML = `<strong>Auto Search Running:</strong> ${range} seconds (random) auto search interval active.`;
-                    }
-                    else if (complete >= 0) {
-                        BING_AUTOSEARCH.elements.div.timer.innerHTML = `<strong>Auto Search Running:</strong> ${next >= 0 ? `New auto search in ${BING_AUTOSEARCH.search.engine.timer.toClockFormat(next)}` : "Finishing last auto search"}, estimated time to complete ${BING_AUTOSEARCH.search.engine.timer.toClockFormat(complete, true)}.`;
-
-                        setTimeout(() => {
-                            BING_AUTOSEARCH.search.engine.timer.run();
-                        }, 1000);
-                    }
-                    else {
-                        BING_AUTOSEARCH.elements.div.timer.innerHTML = `<strong>Auto Search Running:</strong> Stopping the auto search process...`;
-                    }
+                    setTimeout(BING_AUTOSEARCH.search.engine.timer.run, 1000);
                 }
             }
         },
@@ -352,11 +355,18 @@ const BING_AUTOSEARCH = {
                 nextLongBreak: 8 + Math.floor(Math.random() * 3)
             };
 
-            // human-like offset: start the first search 0~30s after Start
-            let delay = Math.floor(Math.random() * 30000);
+            if (BING_AUTOSEARCH.search.closeAfterSearch) {
+                // phones: the first search opens right inside the Start tap (no blank tab waiting in front)
+                BING_AUTOSEARCH.search.runNext();
+            }
+            else {
+                // desktop: human-like offset, the first search runs 0~30s after Start in the hidden corner window
+                let delay = Math.floor(Math.random() * 30000);
 
-            BING_AUTOSEARCH.search.state.timer = setTimeout(BING_AUTOSEARCH.search.runNext, delay);
-            BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(delay);
+                BING_AUTOSEARCH.search.state.timer = setTimeout(BING_AUTOSEARCH.search.runNext, delay);
+                BING_AUTOSEARCH.search.engine.timer.updateEstimatedTime(delay);
+            }
+
             BING_AUTOSEARCH.search.engine.timer.run();
         },
         stop: (message) => {
@@ -406,10 +416,9 @@ const BING_AUTOSEARCH = {
         BING_AUTOSEARCH.storage.load();
 
         BING_AUTOSEARCH.elements.button.start.addEventListener("click", () => {
-            // open the small host window inside this user gesture; opening here doubles as the pop-up permission check
-            let host = BING_AUTOSEARCH.search.engine.window.getHost();
-
-            if (!host) {
+            // desktop: open the small host window inside this user gesture; opening here doubles as the pop-up
+            // permission check (phones open the first search tab in search.start, also inside this gesture)
+            if (!BING_AUTOSEARCH.search.closeAfterSearch && !BING_AUTOSEARCH.search.engine.window.getHost()) {
                 alert("Auto Search needs pop-up permission. Allow pop-ups for this page (click the pop-up icon in the address bar), then press Start again.");
 
                 return;

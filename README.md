@@ -12,7 +12,7 @@ Dựa trên [gerisonsabino/bing_autosearch](https://github.com/gerisonsabino/bin
 - Lập lịch **nối tiếp lượt trước – lượt sau** với độ vênh ngẫu nhiên (±20%), nghỉ dài 60–120s mỗi 8–10 lượt và lệch giờ bấm Start 0–30s → chống dồn dập search khi tab bị ẩn/máy ngủ, khó bị đánh dấu bot hơn.
 - Mặc định khoảng nghỉ **10–20s random**; cài 10s cố định cũ của các phiên trước tự đổi sang mặc định mới (một lần duy nhất).
 - Cài đặt được lưu bằng `localStorage`, áp dụng ngay khi đổi (không cần tải lại trang).
-- Hiển thị tiến độ trên tiêu đề tab; có đếm ngược và thời gian dự kiến hoàn thành với khoảng nghỉ cố định (chế độ random chỉ hiện khoảng 10~20s).
+- Hiển thị tiến độ trên tiêu đề tab; đếm ngược tới lượt kế tiếp và thời gian dự kiến hoàn thành (cả chế độ random).
 - Tự kiểm tra quyền pop-up trước khi chạy và báo nếu chưa được cấp.
 
 ## Cách dùng
@@ -30,7 +30,9 @@ Nếu chưa có quyền pop-up, bấm vào biểu tượng chặn pop-up trên t
 - Tab ẩn trong nền lâu, Chrome có thể giãn nhịp timer xuống ~1 lượt/phút; do lập lịch nối tiếp nên các lượt **không bao giờ dồn thành chùm** — chỉ chậm hơn thôi, không điểm nào bị mất vì dồn.
 - Khi chạy, trang bật **Wake Lock** giữ màn hình luôn sáng (máy tính và điện thoại Android); bấm Stop hoặc chạy xong là tự tắt, màn hình về chế độ tắt bình thường. Nếu bạn rời trang quá lâu Wake Lock có thể tạm mất, quay lại trang khi đang chạy là tự bật lại.
 - **iPhone/iOS:** từ iOS 16.4, Safari và Chrome trên iOS đã hỗ trợ Wake Lock API nên trang dùng API này (iOS 18.4 trở lên hỗ trợ đầy đủ). Chỉ máy iOS cũ hơn mới rơi xuống NoSleep.js (video ẩn) — kém tin cậy hơn; nếu màn hình vẫn tắt, hãy tạm đặt **Cài đặt → Hiển thị & Độ sáng → Auto-Lock → Never** khi chạy. Máy đang dùng cách nào thì xem ở [`wake-test.html`](wake-test.html). Giữ tab chính ở tiền cảnh: iOS tạm dừng tab nền (tab tìm kiếm) nên lượt search có thể bị hoãn tới khi bạn quay lại; đừng chuyển sang app khác giữa lúc chạy.
-- Trên điện thoại (cảm ứng), mỗi lượt tìm kiếm mở một tab mới và tab cũ tự đóng sau khi trang đã tải xong, nên bạn quay về tab chính (thấy tiến độ) mà không phải chuyển tay. Cần **cho phép pop-up** cho trang: nếu trình duyệt chặn mở tab mới từ bộ đếm giờ, app tự lùi về cách cũ (giữ một tab rồi điều hướng lại tab đó); nếu bị chặn hoàn toàn thì app dừng và báo bật pop-up.
+- **Máy tính và điện thoại chạy khác nhau** (phân biệt theo kiểu nhập liệu, không theo độ rộng màn hình; máy tính bảng cảm ứng chạy như điện thoại):
+  - **Máy tính:** chạy ẩn trong một cửa sổ nhỏ ở góc màn hình, dùng lại cửa sổ đó cho mọi lượt nên không chiếm focus; bạn làm việc khác bình thường.
+  - **Điện thoại:** bấm Start là mở ngay lượt đầu trong tab mới. Mỗi tab tự đóng khoảng 3 giây sau khi Bing trả trang (chậm nhất 15 giây nếu mạng yếu), bạn quay về tab chính để xem số lượt và đếm ngược, hết khoảng nghỉ thì tab mới tự mở. Cần **cho phép pop-up**, nếu bị chặn thì app dừng và báo. Trên iPhone, Safari có thể tạm dừng tab chính khi nó nằm nền (chưa kiểm trên máy thật); khi đó tab tìm kiếm chỉ đóng lúc bạn tự quay lại tab chính.
 - Dùng có trách nhiệm, tự chịu rủi ro nếu tài khoản bị Microsoft đánh dấu bất thường.
 
 ## Giấy phép
