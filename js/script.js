@@ -206,6 +206,10 @@ const BING_AUTOSEARCH = {
                 open: (search) => {
                     let engine = BING_AUTOSEARCH.search.engine.window;
                     let state = BING_AUTOSEARCH.search.state;
+
+                    // a pending close from the previous search must not race this one
+                    if (state) clearTimeout(state.closeTimer);
+
                     let host = null;
                     // the very first search reuses the tab opened by the Start click (that tab is already in front)
                     let closeable = BING_AUTOSEARCH.search.closeAfterSearch && !!state && state.index === 1;
@@ -243,7 +247,6 @@ const BING_AUTOSEARCH = {
                     if (closeable) {
                         // close it only after its full lifetime (the search must still count), then the
                         // main tab — with the progress and the timers — comes back to the front
-                        clearTimeout(state.closeTimer);
                         state.closeTimer = setTimeout(() => {
                             try { host.close(); } catch (e) { }
                         }, BING_AUTOSEARCH.search.pageLifetime());
