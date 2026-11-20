@@ -119,7 +119,6 @@ const BING_AUTOSEARCH = {
         },
         wakeLock: {
             sentinel: null,
-            active: false,
             activate: () => {
                 // Only keep the screen awake while a search run is active
                 if (!navigator.wakeLock || !BING_AUTOSEARCH.search.running || BING_AUTOSEARCH.search.wakeLock.sentinel)
@@ -127,18 +126,15 @@ const BING_AUTOSEARCH = {
 
                 navigator.wakeLock.request("screen").then(sentinel => {
                     BING_AUTOSEARCH.search.wakeLock.sentinel = sentinel;
-                    BING_AUTOSEARCH.search.wakeLock.active = true;
 
                     BING_AUTOSEARCH.search.wakeLock.sentinel.addEventListener("release", () => {
                         BING_AUTOSEARCH.search.wakeLock.sentinel = null;
-                        BING_AUTOSEARCH.search.wakeLock.active = false;
                     });
                 }).catch(() => { });
             },
             release: () => {
                 try { BING_AUTOSEARCH.search.wakeLock.sentinel && BING_AUTOSEARCH.search.wakeLock.sentinel.release(); } catch (e) { }
                 BING_AUTOSEARCH.search.wakeLock.sentinel = null;
-                BING_AUTOSEARCH.search.wakeLock.active = false;
             }
         },
         // wake lock fallback for iOS: navigator.wakeLock is undefined there, NoSleep keeps the screen on with a silent looping video instead
@@ -176,7 +172,6 @@ const BING_AUTOSEARCH = {
                 }
             },
             window: {
-                blocked: false,
                 host: null,
                 getHost: (url) => {
                     // Reuse one tiny background window for every search so no new tab steals focus;
@@ -396,12 +391,15 @@ const BING_AUTOSEARCH = {
 
         BING_AUTOSEARCH.elements.div.settings.innerHTML = `<strong>Auto Search Settings:</strong> ${BING_AUTOSEARCH.search.engine.settings.toString()}.`;
 
-        if ("wakeLock" in navigator) {
-            document.addEventListener("visibilitychange", () => {
-                if (document.visibilityState === "visible" && BING_AUTOSEARCH.search.running)
-                    BING_AUTOSEARCH.search.wakeLock.activate();
-            });
-        }
+        // re-arm the screen keeper when the tab becomes visible again: browsers drop the wake
+        // lock and pause the NoSleep video (iOS) while the page is hidden
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState !== "visible" || !BING_AUTOSEARCH.search.running)
+                return;
+
+            BING_AUTOSEARCH.search.wakeLock.activate();
+            BING_AUTOSEARCH.search.enableNoSleep();
+        });
     }
 };
 

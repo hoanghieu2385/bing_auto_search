@@ -54,10 +54,6 @@ body {
     padding: 0.3em 0;
 }
 
-#modal-help .form-check-label {
-    cursor: pointer;
-}
-
 #wrapper h1,
 #wrapper h2, 
 footer p.pt-3,
@@ -74,8 +70,4 @@ footer a {
 footer a:hover {
     color: #fdbf07;
     text-decoration: underline;
-}
-
-footer a.btn:hover {
-    text-decoration: none;
 }
