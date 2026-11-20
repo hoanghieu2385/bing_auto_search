@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="img/favicon.png" />
+    <title>Test giữ sáng màn hình (Wake Lock / NoSleep)</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #111; color: #eee; font: 16px/1.45 -apple-system, system-ui, sans-serif; }
+        h1 { font-size: 20px; margin: 0 0 12px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+        td { border-bottom: 1px solid #333; padding: 6px 4px; vertical-align: top; }
+        td:first-child { color: #9ca3af; white-space: nowrap; }
+        .ok { color: #4ade80; } .no { color: #f87171; }
+        button { font: inherit; padding: 12px; margin: 0 0 8px; width: 100%; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
+        button.secondary { background: #374151; }
+        #log { background: #1f2937; border-radius: 8px; padding: 10px; font: 13px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+        #clock { font: 700 40px/1.1 ui-monospace, monospace; text-align: center; margin: 16px 0; }
+        p { color: #d1d5db; }
+    </style>
+</head>
+<body>
+    <h1>Test giữ sáng màn hình</h1>
+
+    <table>
+        <tr><td>Thiết bị</td><td id="ua"></td></tr>
+        <tr><td>iOS</td><td id="ios"></td></tr>
+        <tr><td>navigator.wakeLock</td><td id="support"></td></tr>
+        <tr><td>App sẽ dùng</td><td id="path"></td></tr>
+        <tr><td>NoSleep.js</td><td id="nosleep-loaded"></td></tr>
+        <tr><td>visibilityState</td><td id="vis"></td></tr>
+    </table>
+
+    <div id="clock">00:00</div>
+
+    <button id="btn-lock">Bật Wake Lock (native)</button>
+    <button id="btn-nosleep" class="secondary">Bật NoSleep (video)</button>
+    <button id="btn-off" class="secondary">Tắt hết</button>
+
+    <div id="log"></div>
+
+    <p><strong>Cách test thật:</strong> bật một trong hai nút, đặt <em>Cài đặt → Hiển thị &amp; Độ sáng → Auto-Lock</em> = 30 giây, để yên máy 60 giây không chạm. Màn hình tắt = không có tác dụng; đồng hồ vẫn chạy và màn hình sáng = đang giữ được.</p>
+    <p><a href="./" style="color:#fdbf07">← về Bing Auto Search</a></p>
+
+    <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const logEl = $("log");
+        const started = Date.now();
+        let lock = null;
+        let noSleep = null;
+
+        function log(text) {
+            const t = new Date().toTimeString().slice(0, 8);
+            logEl.textContent = `[${t}] ${text}\n` + logEl.textContent;
+        }
+
+        function set(id, text, good) {
+            const el = $(id);
+            el.textContent = text;
+            el.className = good === undefined ? "" : (good ? "ok" : "no");
+        }
+
+        const ios = (navigator.userAgent.match(/OS (\d+)[._](\d+)/) || []).slice(1).join(".");
+        const supports = "wakeLock" in navigator;
+
+        set("ua", navigator.userAgent);
+        set("ios", ios ? ios : "không phải iPhone/iPad (hoặc UA bị che)");
+        set("support", supports ? "có" : "không", supports);
+        set("path", supports ? "Wake Lock API (native)" : "NoSleep.js (video) — chỉ iOS < 16.4", supports);
+        set("nosleep-loaded", typeof NoSleep === "function" ? "đã tải" : "KHÔNG tải được (CDN bị chặn?)", typeof NoSleep === "function");
+        set("vis", document.visibilityState);
+
+        document.addEventListener("visibilitychange", () => {
+            set("vis", document.visibilityState);
+            log("visibilitychange → " + document.visibilityState);
+        });
+
+        $("btn-lock").addEventListener("click", () => {
+            if (!navigator.wakeLock) {
+                log("máy này không có navigator.wakeLock");
+                return;
+            }
+
+            navigator.wakeLock.request("screen").then((sentinel) => {
+                lock = sentinel;
+                log("Wake Lock: ĐÃ BẬT");
+                sentinel.addEventListener("release", () => {
+                    log("Wake Lock: đã nhả (release)");
+                    if (lock === sentinel) lock = null;
+                });
+            }).catch((err) => log("Wake Lock lỗi: " + err.name + " — " + err.message));
+        });
+
+        $("btn-nosleep").addEventListener("click", () => {
+            if (typeof NoSleep !== "function") {
+                log("NoSleep chưa tải, không test được");
+                return;
+            }
+
+            noSleep = noSleep || new NoSleep();
+            noSleep.enable().then(() => log("NoSleep: ĐÃ BẬT (enabled=" + noSleep.isEnabled + ")"))
+                .catch((err) => log("NoSleep lỗi: " + err.name + " — " + err.message));
+        });
+
+        $("btn-off").addEventListener("click", () => {
+            if (lock) { lock.release(); lock = null; }
+            if (noSleep) noSleep.disable();
+            log("đã tắt Wake Lock và NoSleep");
+        });
+
+        setInterval(() => {
+            const s = Math.floor((Date.now() - started) / 1000);
+            $("clock").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+        }, 1000);
+    </script>
+</body>
+</html>

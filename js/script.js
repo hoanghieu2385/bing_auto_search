@@ -146,7 +146,7 @@ const BING_AUTOSEARCH = {
                 BING_AUTOSEARCH.search.wakeLock.sentinel = null;
             }
         },
-        // wake lock fallback for iOS: navigator.wakeLock is undefined there, NoSleep keeps the screen on with a silent looping video instead
+        // wake lock fallback for iOS < 16.4 (no navigator.wakeLock there): NoSleep keeps the screen on with a silent looping video instead
         noSleep: window.NoSleep ? new NoSleep() : null,
         enableNoSleep: () => {
             if (!navigator.wakeLock && BING_AUTOSEARCH.search.noSleep)
