@@ -107,6 +107,9 @@ const BING_AUTOSEARCH = {
         interval: 9998,
         running: false,
         state: null,
+        // on phones: close each search tab once it has loaded and open a fresh one, so the main tab
+        // (progress + timers) comes back to the front instead of staying hidden behind the search tab
+        closeAfterSearch: !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches),
         isRandomInterval: () => BING_AUTOSEARCH.search.interval === 9998 || BING_AUTOSEARCH.search.interval === 9999,
         randomInterval: () => (Math.floor(Math.random() * (BING_AUTOSEARCH.search.interval === 9998 ? 11 : 51)) + 10) * 1000,
         avgInterval: () => (BING_AUTOSEARCH.search.isRandomInterval() ? (BING_AUTOSEARCH.search.interval === 9998 ? 15000 : 35000) : BING_AUTOSEARCH.search.interval),
@@ -182,6 +185,7 @@ const BING_AUTOSEARCH = {
             },
             window: {
                 host: null,
+                features: () => "width=140,height=100,left=" + Math.max(0, (screen.availWidth - 150)) + ",top=" + Math.max(0, (screen.availHeight - 160)),
                 getHost: (url) => {
                     // Reuse one tiny background window for every search so no new tab steals focus;
                     // a fresh window.open only happens if the user closed the host mid-run.
@@ -190,7 +194,7 @@ const BING_AUTOSEARCH = {
                     try { if (host && !host.closed) return host; } catch (e) { }
 
                     try {
-                        host = window.open(url || "about:blank", "bing_autosearch_host", "width=140,height=100,left=" + Math.max(0, (screen.availWidth - 150)) + ",top=" + Math.max(0, (screen.availHeight - 160)));
+                        host = window.open(url || "about:blank", "bing_autosearch_host", BING_AUTOSEARCH.search.engine.window.features());
                         BING_AUTOSEARCH.search.engine.window.host = host;
 
                         window.focus();
@@ -200,18 +204,50 @@ const BING_AUTOSEARCH = {
                     return host;
                 },
                 open: (search) => {
-                    try {
-                        let host = BING_AUTOSEARCH.search.engine.window.getHost(search.url);
+                    let engine = BING_AUTOSEARCH.search.engine.window;
+                    let state = BING_AUTOSEARCH.search.state;
+                    let host = null;
+                    // the very first search reuses the tab opened by the Start click (that tab is already in front)
+                    let closeable = BING_AUTOSEARCH.search.closeAfterSearch && !!state && state.index === 1;
+
+                    if (BING_AUTOSEARCH.search.closeAfterSearch && !closeable) {
+                        // a fresh named window per search; the old one is only closed once the new one really
+                        // opened, so a blocked pop-up leaves the current tab usable for reuse
+                        let fresh = null;
+
+                        try { fresh = window.open(search.url, "bing_autosearch_host_" + search.index, engine.features()); } catch (e) { }
+
+                        if (fresh) {
+                            try { if (engine.host && !engine.host.closed && engine.host !== fresh) engine.host.close(); } catch (e) { }
+
+                            engine.host = host = fresh;
+                            closeable = true;
+                        }
+                    }
+
+                    if (!host) {
+                        try {
+                            host = engine.getHost(search.url);
+
+                            if (host) host.location.replace(search.url);
+                        }
+                        catch (e) { }
 
                         if (!host) {
                             BING_AUTOSEARCH.search.stop("Pop-ups are blocked, so the remaining searches were cancelled. Allow pop-ups for this page (pop-up icon in the address bar), then press Start again.");
 
                             return;
                         }
-
-                        host.location.replace(search.url);
                     }
-                    catch (e) { }
+
+                    if (closeable) {
+                        // close it only after its full lifetime (the search must still count), then the
+                        // main tab — with the progress and the timers — comes back to the front
+                        clearTimeout(state.closeTimer);
+                        state.closeTimer = setTimeout(() => {
+                            try { host.close(); } catch (e) { }
+                        }, BING_AUTOSEARCH.search.pageLifetime());
+                    }
                 }
             },
             settings: {
@@ -309,6 +345,7 @@ const BING_AUTOSEARCH = {
             BING_AUTOSEARCH.search.state = {
                 index: 0,
                 timer: null,
+                closeTimer: null,
                 nextLongBreak: 8 + Math.floor(Math.random() * 3)
             };
 
@@ -327,6 +364,7 @@ const BING_AUTOSEARCH = {
 
             if (BING_AUTOSEARCH.search.state) {
                 clearTimeout(BING_AUTOSEARCH.search.state.timer);
+                clearTimeout(BING_AUTOSEARCH.search.state.closeTimer);
                 BING_AUTOSEARCH.search.state = null;
             }
 

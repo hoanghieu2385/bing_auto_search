@@ -30,7 +30,7 @@ Nếu chưa có quyền pop-up, bấm vào biểu tượng chặn pop-up trên t
 - Tab ẩn trong nền lâu, Chrome có thể giãn nhịp timer xuống ~1 lượt/phút; do lập lịch nối tiếp nên các lượt **không bao giờ dồn thành chùm** — chỉ chậm hơn thôi, không điểm nào bị mất vì dồn.
 - Khi chạy, trang bật **Wake Lock** giữ màn hình luôn sáng (máy tính và điện thoại Android); bấm Stop hoặc chạy xong là tự tắt, màn hình về chế độ tắt bình thường. Nếu bạn rời trang quá lâu Wake Lock có thể tạm mất, quay lại trang khi đang chạy là tự bật lại.
 - **iPhone/iOS:** từ iOS 16.4, Safari và Chrome trên iOS đã hỗ trợ Wake Lock API nên trang dùng API này (iOS 18.4 trở lên hỗ trợ đầy đủ). Chỉ máy iOS cũ hơn mới rơi xuống NoSleep.js (video ẩn) — kém tin cậy hơn; nếu màn hình vẫn tắt, hãy tạm đặt **Cài đặt → Hiển thị & Độ sáng → Auto-Lock → Never** khi chạy. Máy đang dùng cách nào thì xem ở [`wake-test.html`](wake-test.html). Giữ tab chính ở tiền cảnh: iOS tạm dừng tab nền (tab tìm kiếm) nên lượt search có thể bị hoãn tới khi bạn quay lại; đừng chuyển sang app khác giữa lúc chạy.
-- Trên điện thoại, ở lần chạy đầu tiên tab của cửa sổ tìm kiếm có thể chiếm màn hình một lần duy nhất khi bấm Start; chỉ cần chuyển về tab chính, các lượt tìm sau chạy dưới nền.
+- Trên điện thoại (cảm ứng), mỗi lượt tìm kiếm mở một tab mới và tab cũ tự đóng sau khi trang đã tải xong, nên bạn quay về tab chính (thấy tiến độ) mà không phải chuyển tay; nếu trình duyệt chặn mở tab mới từ bộ đếm giờ thì app tự lùi về cách cũ (mở tab một lần rồi điều hướng lại tab đó) và không dừng lượt nào.
 - Dùng có trách nhiệm, tự chịu rủi ro nếu tài khoản bị Microsoft đánh dấu bất thường.
 
 ## Giấy phép
